@@ -207,13 +207,20 @@ class NerProcessor(DataProcessor):
         return examples
 
 
-def write_tokens(tokens,mode):
+def write_tokens(tokens,labels, mode):
     if mode=="test":
         path = os.path.join(FLAGS.output_dir, "token_"+mode+".txt")
         wf = open(path,'a')
         for token in tokens:
             if token!="**NULL**":
                 wf.write(token+'\n')
+        wf.close()
+
+        path2 = os.path.join(FLAGS.output_dir, "trueLabels_"+mode+".txt")
+        wf = open(path2,'a')
+        for token in labels:
+            if token!="**NULL**":
+                wf.write(str(token)+'\n')
         wf.close()
 
 def convert_single_example(ex_index, example, label_list, max_seq_length, tokenizer,mode):
@@ -242,15 +249,19 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
     ntokens = []
     segment_ids = []
     label_ids = []
+    outLabels = []
     ntokens.append("[CLS]")
     segment_ids.append(0)
     # append("O") or append("[CLS]") not sure!
     label_ids.append(label_map["[CLS]"])
+    outLabels.append(label_map["[CLS]"])
     for i, token in enumerate(tokens):
         ntokens.append(token)
         segment_ids.append(0)
         label_ids.append(label_map[labels[i]])
+        outLabels.append(label_map[labels[i]])
     ntokens.append("[SEP]")
+    outLabels.append(label_map["[SEP]"])
     segment_ids.append(0)
     # append("O") or append("[SEP]") not sure!
     label_ids.append(label_map["[SEP]"])
@@ -264,6 +275,7 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
         # we don't concerned about it!
         label_ids.append(0)
         ntokens.append("**NULL**")
+        outLabels.append("**NULL**")
         #label_mask.append(0)
     # print(len(input_ids))
     assert len(input_ids) == max_seq_length
@@ -290,7 +302,7 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
         label_ids=label_ids,
         #label_mask = label_mask
     )
-    write_tokens(ntokens,mode)
+    write_tokens(ntokens,outLabels,mode)
     return feature
 
 
@@ -578,6 +590,7 @@ def main(_):
             for key in sorted(result.keys()):
                 tf.logging.info("  %s = %s", key, str(result[key]))
                 writer.write("%s = %s\n" % (key, str(result[key])))
+
     if FLAGS.do_predict:
         token_path = os.path.join(FLAGS.output_dir, "token_test.txt")
         with open(os.path.join(FLAGS.output_dir, 'label2id.pkl'),'rb') as rf:
@@ -624,6 +637,8 @@ def main(_):
                 tf.logging.info("  %s = %s", key, str(prf[key]))
 
         result = estimator.predict(input_fn=predict_input_fn)
+        print(result)
+
         output_predict_file = os.path.join(FLAGS.output_dir, "label_test.txt")
         output_logits_file = os.path.join(FLAGS.output_dir, "logits_test.txt")
         with open(output_predict_file,'w') as p_writer:
@@ -631,7 +646,7 @@ def main(_):
                 for pidx, prediction in enumerate(result):
                     slen = len(tokens[pidx])
                     
-                    output_line = "\n".join(id2label[id] if id!=0 else id2label[3] for id in prediction['prediction'][:slen]) + "\n" #change to O tag
+                    output_line = "\n".join(tokens[pidx][j] + "\t" + id2label[id] if id!=0 else id2label[3] for j,id in enumerate(prediction['prediction'][:slen])) + "\n" #change to O tag
                     p_writer.write(output_line)
                      
                     output_line = "\n".join('\t'.join(str(log_prob) for log_prob in log_probs) for log_probs in prediction['log_probs'][:slen]) + "\n" 
